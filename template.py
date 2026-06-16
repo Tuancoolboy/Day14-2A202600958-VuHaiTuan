@@ -85,6 +85,11 @@ class EvalResult:
         context_recall:    Float 0-1 or None — coverage of expected by context.
                         (Both stay None unless retrieved chunks are supplied;
                          they are NOT part of overall_score().)
+        answer_conciseness: Float 0-1 or None — bonus custom metric.
+                         It is reported separately and not part of pass/fail.
+        answer_specificity: Float 0-1 or None — bonus custom metric.
+                         High when answer content overlaps expected content
+                         without adding too much unrelated information.
     """
     qa_pair: QAPair
     actual_answer: str
@@ -95,6 +100,8 @@ class EvalResult:
     failure_type: str | None = None
     context_precision: float | None = None
     context_recall: float | None = None
+    answer_conciseness: float | None = None
+    answer_specificity: float | None = None
 
     def overall_score(self) -> float:
         """Compute the average of faithfulness, relevance, and completeness.
@@ -218,6 +225,48 @@ class RAGASEvaluator:
 
         overlap = answer_tokens & expected_tokens
         return _clamp_score(len(overlap) / len(expected_tokens))
+
+    def evaluate_answer_conciseness(
+        self,
+        answer: str,
+        min_words: int = 4,
+        max_words: int = 60,
+    ) -> float:
+        """
+        Bonus custom metric: reward answers that are neither empty nor bloated.
+
+        This is intentionally separate from overall_score() because a concise
+        answer can still be wrong, and a long answer can still be correct. The
+        metric is useful as a business/user-experience signal in reports.
+        """
+        words = re.findall(r"\b\w+\b", answer)
+        word_count = len(words)
+
+        if word_count == 0:
+            return 0.0
+        if word_count < min_words:
+            return _clamp_score(word_count / min_words)
+        if word_count <= max_words:
+            return 1.0
+        return _clamp_score(max_words / word_count)
+
+    def evaluate_answer_specificity(self, answer: str, expected: str) -> float:
+        """
+        Bonus custom metric: answer-side precision against the reference answer.
+
+        Completeness asks "how much of expected is covered by answer?". This
+        specificity metric asks the opposite: "how much of the answer is
+        actually expected content instead of extra noise?".
+        """
+        answer_tokens = _tokenize(answer)
+        expected_tokens = _tokenize(expected)
+
+        if not answer_tokens:
+            return 0.0
+        if not expected_tokens:
+            return 1.0
+
+        return _clamp_score(len(answer_tokens & expected_tokens) / len(answer_tokens))
 
     # -----------------------------------------------------------------------
     # Task 2b — Retrieval-side metrics (evaluate the GET-CONTEXT step)
@@ -590,6 +639,13 @@ class BenchmarkRunner:
                 pair.expected_answer,
             )
             result.qa_pair = pair
+            result.answer_conciseness = evaluator.evaluate_answer_conciseness(
+                actual_answer
+            )
+            result.answer_specificity = evaluator.evaluate_answer_specificity(
+                actual_answer,
+                pair.expected_answer,
+            )
 
             if pair.retrieved_contexts:
                 result.context_recall = evaluator.evaluate_context_recall(
@@ -639,6 +695,16 @@ class BenchmarkRunner:
             "avg_faithfulness": avg([result.faithfulness for result in results]),
             "avg_relevance": avg([result.relevance for result in results]),
             "avg_completeness": avg([result.completeness for result in results]),
+            "avg_answer_conciseness": avg([
+                result.answer_conciseness
+                for result in results
+                if result.answer_conciseness is not None
+            ]),
+            "avg_answer_specificity": avg([
+                result.answer_specificity
+                for result in results
+                if result.answer_specificity is not None
+            ]),
             "failure_types": failure_types,
         }
 

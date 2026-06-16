@@ -69,6 +69,9 @@ Main implementation choices:
 - `QAPair` stores `question`, `expected_answer`, `context`, `metadata`, and `retrieved_contexts`.
 - `EvalResult` stores the agent answer, scores, pass/fail flag, failure type, and optional retrieval metrics.
 - `RAGASEvaluator` uses word-overlap heuristics after lowercase tokenization and stopword removal.
+- Bonus custom metrics were added:
+  - `evaluate_answer_conciseness`: checks whether the answer is short enough for user-facing QA.
+  - `evaluate_answer_specificity`: answer-side precision against the reference answer; high score means the answer avoids unrelated extra content.
 - `BenchmarkRunner` runs the agent over all QA pairs, aggregates scores, and detects regression if a metric drops by more than 0.05.
 - `FailureAnalyzer` groups failures, suggests likely root causes, and generates a Markdown improvement log.
 
@@ -187,19 +190,64 @@ The mock agent answers were intentionally mixed: easy/medium answers are mostly 
 
 ### Exercise 3.4 - Framework Comparison (Bonus)
 
-| Criteria | Framework 1: RAGAS-inspired heuristic | Framework 2: DeepEval |
-|----------|---------------------------------------|-----------------------|
-| Setup complexity | Low; pure Python word overlap. | Medium; needs package setup and model/API configuration. |
-| Metrics available | Faithfulness, relevance, completeness, context recall, context precision. | LLM unit tests, hallucination checks, answer relevancy, custom assertions. |
-| CI/CD integration | Easy with pytest and threshold checks. | Strong pytest-native workflow. |
-| Score for same dataset | 50% pass rate in this lab run. | Expected to be stricter and more semantic than word overlap. |
-| Insight | Good for learning mechanics, weak for paraphrases. | Better for production-like evaluation when configured carefully. |
+Implemented in `bonus_framework_comparison.py`.
+
+Because this lab environment does not require API keys, the second runner is a deterministic **DeepEval-style local rubric** instead of the external DeepEval package. It follows the same idea as DeepEval assertions: score answer correctness, grounding, relevance, specificity, and adversarial safety.
+
+Command:
+
+```bash
+python bonus_framework_comparison.py
+```
+
+#### Aggregate comparison on the same 20-case dataset
+
+| Framework | Pass Rate | Avg Overall | Avg Specificity |
+|-----------|-----------|-------------|-----------------|
+| RAGAS-inspired heuristic | 0.50 | 0.49 | 0.56 |
+| DeepEval-style local rubric | 0.65 | 0.59 | 0.56 |
+
+#### Per-case comparison
+
+| ID | RAGAS Overall | DeepEval-style Overall | Delta |
+|----|---------------|------------------------|-------|
+| E01 | 0.76 | 0.86 | +0.10 |
+| E02 | 0.72 | 0.80 | +0.08 |
+| E03 | 0.64 | 0.75 | +0.12 |
+| E04 | 0.73 | 0.84 | +0.11 |
+| E05 | 0.66 | 0.78 | +0.12 |
+| M01 | 0.63 | 0.70 | +0.07 |
+| M02 | 0.59 | 0.67 | +0.08 |
+| M03 | 0.71 | 0.82 | +0.11 |
+| M04 | 0.65 | 0.73 | +0.08 |
+| M05 | 0.71 | 0.81 | +0.09 |
+| M06 | 0.58 | 0.63 | +0.05 |
+| M07 | 0.55 | 0.65 | +0.10 |
+| H01 | 0.51 | 0.73 | +0.22 |
+| H02 | 0.23 | 0.39 | +0.16 |
+| H03 | 0.00 | 0.20 | +0.20 |
+| H04 | 0.05 | 0.29 | +0.24 |
+| H05 | 0.11 | 0.38 | +0.27 |
+| A01 | 0.23 | 0.22 | -0.01 |
+| A02 | 0.46 | 0.32 | -0.14 |
+| A03 | 0.33 | 0.22 | -0.11 |
 
 **Analysis:**
 
-- Scores may not be consistent because the heuristic rewards lexical overlap while DeepEval can judge semantic similarity.
-- DeepEval is usually stricter on factuality and safety.
-- Failure cases should overlap for obvious hallucinations, but paraphrased correct answers may score better in DeepEval.
+- The DeepEval-style rubric is more forgiving on semantic overlap for normal easy/medium cases because it uses answer F1 and a safety dimension, not only the three core word-overlap metrics.
+- It is stricter on adversarial cases A02 and A03 because the safety assertion penalizes prompt injection and ambiguous answers.
+- The custom `answer_specificity` metric adds a useful signal: it catches answers that include too much content not found in the expected answer.
+
+#### Bonus CI/CD integration
+
+Implemented in `ci/evaluate.sh`.
+
+The script is CI-ready and runs:
+
+1. `python -m pytest tests/ -v`
+2. `python bonus_framework_comparison.py`
+
+An optional GitHub Actions template is included at `ci/github-actions-evaluation.yml`. In a production repository, this file can be copied to `.github/workflows/evaluation.yml` when the GitHub token has workflow permission.
 
 ### Exercise 3.5 - Increase Context Precision with Reranking
 
@@ -268,3 +316,6 @@ Retrieve top-50 candidates with hybrid search, apply metadata filters, rerank wi
 - [x] `exercises.md` completed
 - [x] `reflection.md` written
 - [x] `solution/solution.py` copied
+- [x] Bonus: framework comparison script added
+- [x] Bonus: CI evaluation script added
+- [x] Bonus: custom metrics `answer_conciseness` and `answer_specificity` added

@@ -206,7 +206,14 @@ The eval pipeline should run after unit tests but before deployment. Failed thre
 
 ## 7. Framework Reflection
 
-**Framework used in lab:** RAGAS-inspired heuristic
+**Frameworks used in lab:** RAGAS-inspired heuristic and DeepEval-style local rubric
+
+**Bonus artifacts added:**
+
+- `bonus_framework_comparison.py`: compares the two evaluation styles on the same 20-case dataset.
+- `ci/evaluate.sh`: runs pytest and the bonus comparison as a CI/CD quality gate.
+- `ci/github-actions-evaluation.yml`: optional GitHub Actions template for repositories with workflow permission.
+- Custom metrics: `answer_conciseness` and `answer_specificity`.
 
 **Production choice:** RAGAS plus DeepEval.
 
@@ -216,4 +223,4 @@ The eval pipeline should run after unit tests but before deployment. Failed thre
 | CI/CD integration | DeepEval works well with pytest-style assertions and quality gates. |
 | Team workflow | RAGAS gives metric visibility; DeepEval gives test-style checks for releases. |
 
-The heuristic implementation is useful for learning because it is transparent and easy to test. In production, I would replace word overlap with semantic and LLM-based evaluators, then calibrate scores against human review.
+The heuristic implementation is useful for learning because it is transparent and easy to test. The local DeepEval-style rubric adds a second viewpoint without needing API keys. In production, I would replace the local rubric with real DeepEval/RAGAS model-backed evaluators, then calibrate scores against human review.
